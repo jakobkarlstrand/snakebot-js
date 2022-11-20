@@ -1,10 +1,14 @@
 import { snakeConsole as console } from '../src/client';
-import { GameMap } from '../src/utils';
+import { Coordinate, GameMap } from '../src/utils';
 import { MessageType } from '../src/messages';
 import { GameSettings, Direction, RelativeDirection, TileType } from '../src/types';
 import type { GameStartingEventMessage, Message, SnakeDeadEventMessage } from '../src/types_messages';
+import { pathsToNearestFood, pathsToTrapEnemy, reducePathsByLookingInTheFuture } from './functions';
+import { privateEncrypt } from 'crypto';
 
 const allDirections = Object.values(Direction); // [Direction.Up, Direction.Down, Direction.Left, Direction.Right];
+
+const MAX_DISTANCE_TO_GO_FOR_FOOD = 20;
 
 // Get random item in array
 function getRandomItem<T>(array: T[]): T {
@@ -18,22 +22,28 @@ function getRandomItem<T>(array: T[]): T {
  */
 export async function getNextMove(gameMap: GameMap): Promise<Direction> {
   const myHeadPosition = gameMap.playerSnake.headCoordinate; // Coordinate of my snake's head
-  const possibleMoves = allDirections.filter(direction => gameMap.playerSnake.canMoveInDirection(direction)); //Filters safe directions to move in
+  const possibleMoves = allDirections.filter((direction) => gameMap.playerSnake.canMoveInDirection(direction)); //Filters safe directions to move in
 
   // If there are no safe moves, bad luck!
-  if (possibleMoves.length === 0){
+  if (possibleMoves.length === 0) {
     return Direction.Down;
   }
 
-  // Go toward food if it's nearby
-  for (const direction of possibleMoves) {
-    const nextPosition = myHeadPosition.translateByDirection(direction); // Gets the next position of the snake
-    if (gameMap.getTileType(nextPosition) === TileType.Food) {
-      return direction;
-    }
+  // Get all food coordinates which is accesable
+  const foodPaths = pathsToNearestFood(gameMap);
+
+  if (foodPaths.length > 0 && foodPaths[0].weightedDistance < MAX_DISTANCE_TO_GO_FOR_FOOD) {
+    return gameMap.playerSnake.headCoordinate.directionTo(foodPaths[0].path[1]);
   }
 
-  // Otherwise, choose a random direction
+  const trapPaths = pathsToTrapEnemy(gameMap);
+
+  if (trapPaths.length > 0) {
+    return gameMap.playerSnake.headCoordinate.directionTo(trapPaths[0].path[1]);
+  }
+
+  // const toWall = directionToHugTheWall(gameMap);
+
   return getRandomItem(possibleMoves);
 }
 
