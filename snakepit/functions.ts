@@ -27,7 +27,7 @@ const allPathsToDestinations = (gameMap: GameMap, dest_coordinates: Coordinate[]
   dest_coordinates.forEach((coor) => {
     const path = shortestPath(gameMap, gameMap.playerSnake.headCoordinate, coor);
 
-    if (path.path.length > 1 && path.safeIndex > 0.8) {
+    if (path.path.length > 1) {
       paths.push(path);
     }
   });
@@ -39,7 +39,14 @@ const allPathsToDestinations = (gameMap: GameMap, dest_coordinates: Coordinate[]
     else return -1;
   });
 
-  return sortedPaths;
+  const sortedPathsSafeIndex = paths.sort((a, b) => {
+    const a_safeIdx = a.safeIndex;
+    const b_safeIdx = b.safeIndex;
+    if (a_safeIdx < b_safeIdx) return 1;
+    else return -1;
+  });
+
+  return sortedPathsSafeIndex;
 };
 
 export const pathsToNearestFood = (gameMap: GameMap) => {
@@ -131,7 +138,7 @@ const tileIsFree = (gameMap: GameMap, coordinate: Coordinate) => {
 };
 
 const normalizeSafeIndex = (pathLength: number, nFreeNeighborsAlongPath: number) => {
-  if (pathLength <= 1) {
+  if (pathLength <= 2) {
     if (nFreeNeighborsAlongPath === 0) {
       return 0;
     }
@@ -139,12 +146,18 @@ const normalizeSafeIndex = (pathLength: number, nFreeNeighborsAlongPath: number)
       return 0.5;
     }
     if (nFreeNeighborsAlongPath <= 2) {
-      return 0.8;
+      return 0.9;
     }
     return 1;
   }
 
-  return (pathLength * 4) / (nFreeNeighborsAlongPath + 1);
+  // [X][X][O][|][X][X]
+  // [X][X][X][|][O][X]
+  // [X][X][X][|][-][X]
+  // [X][X][X][O][|][X]
+  // [X][X][X][X][|][X]    -> (10-1) / 13 ~ 1.8
+
+  return (pathLength * 4) / nFreeNeighborsAlongPath;
 };
 
 export type PathAndDistance = {
@@ -152,6 +165,56 @@ export type PathAndDistance = {
   weightedDistance: number;
   safeIndex: number;
 };
+
+const getFreeNeighborsAlongPath = (gameMap: GameMap, path: Coordinate[]) => {
+  let cIndex = 0;
+  let currentDirection = path[cIndex].directionTo(path[++cIndex]);
+  let currentPosition = path[cIndex];
+  let nFreeNeighbors = 0;
+
+  const verticalNeighbors = () => {
+    const neighbors: Coordinate[] = [];
+    const up = currentPosition.translateByDirection(Direction.Up);
+    const down = currentPosition.translateByDirection(Direction.Down);
+    if (tileIsFree(gameMap, up)) {
+      neighbors.push(up);
+    }
+    if (tileIsFree(gameMap, down)) {
+      neighbors.push(down);
+    }
+    return neighbors.length;
+  };
+
+  const horizontalNeighbors = () => {
+    const neighbors: Coordinate[] = [];
+    const left = currentPosition.translateByDirection(Direction.Left);
+    const right = currentPosition.translateByDirection(Direction.Right);
+    if (tileIsFree(gameMap, left)) {
+      neighbors.push(left);
+    }
+    if (tileIsFree(gameMap, right)) {
+      neighbors.push(right);
+    }
+    return neighbors.length;
+  };
+
+  while (cIndex < path.length) {
+    if (currentDirection === Direction.Left || currentDirection === Direction.Right) {
+      nFreeNeighbors += verticalNeighbors();
+    } else {
+      nFreeNeighbors += horizontalNeighbors();
+    }
+    ++cIndex;
+    if (cIndex >= path.length) {
+      break;
+    }
+    currentDirection = currentPosition.directionTo(path[cIndex]);
+    currentPosition = path[cIndex];
+  }
+
+  return nFreeNeighbors;
+};
+
 export const shortestPath = function (gameMap: GameMap, start: Coordinate, finish: Coordinate) {
   const queue: QueueItem[] = [{ coordinate: start, distance: 1 }];
   const dest = finish;
@@ -184,16 +247,21 @@ export const shortestPath = function (gameMap: GameMap, start: Coordinate, finis
     if (q.coordinate.x === dest.x && q.coordinate.y === dest.y) {
       // Derive the path from the linked list we now have in the visited structure:
       const path = [];
-      let nFreeNeighborsAlongPath = 0;
+
       while (q.coordinate !== null) {
         path.push(q.coordinate);
         path_dist = q.distance;
-        nFreeNeighborsAlongPath += getFreeNeighborCoordinates(gameMap, q.coordinate).length;
+
         q.coordinate = visited.get(coordinateToString(q.coordinate));
       }
       const reverseedPath = path.reverse();
 
-      const safeIndexNormalized = normalizeSafeIndex(reverseedPath.length, nFreeNeighborsAlongPath);
+      const nFreeNeighborsAlongPath = getFreeNeighborsAlongPath(gameMap, path);
+
+      const safeIndexNormalized = normalizeSafeIndex(
+        reverseedPath.length - 1,
+        nFreeNeighborsAlongPath - getFreeNeighborCoordinates(gameMap, reverseedPath[0]).length,
+      );
 
       return {
         path: reverseedPath,

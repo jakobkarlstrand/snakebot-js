@@ -33,6 +33,7 @@ export async function getNextMove(gameMap: GameMap): Promise<Direction> {
   const foodPaths = pathsToNearestFood(gameMap);
 
   if (foodPaths.length > 0 && foodPaths[0].weightedDistance < MAX_DISTANCE_TO_GO_FOR_FOOD) {
+    console.log(foodPaths[0].safeIndex);
     return gameMap.playerSnake.headCoordinate.directionTo(foodPaths[0].path[1]);
   }
 
